@@ -44,7 +44,8 @@ class ModelResult:
 
 
 def _feature_matrix(frame: pl.DataFrame, features: list[str]) -> np.ndarray:
-    return frame.select(features).fill_nan(0.0).fill_null(0.0).to_numpy()
+    values = frame.select(features).fill_nan(0.0).fill_null(0.0).to_numpy().astype(float)
+    return np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def _can_stratify(labels: np.ndarray) -> bool:
@@ -56,7 +57,7 @@ def _standardize(x: np.ndarray) -> np.ndarray:
     mean = x.mean(axis=0)
     std = x.std(axis=0)
     std = np.where(std == 0.0, 1.0, std)
-    return (x - mean) / std
+    return np.nan_to_num((x - mean) / std, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def _simple_kmeans(x: np.ndarray, n_clusters: int, random_state: int, max_iter: int = 50) -> np.ndarray:
@@ -151,7 +152,7 @@ def train_price_direction_model(
         raise ValueError("not enough non-flat labels to train price direction model")
 
     x = _feature_matrix(model_frame, features)
-    y = model_frame["future_direction"].to_numpy()
+    y = np.nan_to_num(model_frame["future_direction"].to_numpy(), nan=0.0, posinf=0.0, neginf=0.0)
     if len(np.unique(y)) < 2:
         raise ValueError("price direction model needs both up and down examples")
     stratify = y if _can_stratify(y) else None
@@ -182,7 +183,7 @@ def train_fill_probability_model(
     features = [feature for feature in EXECUTION_FEATURES if feature in executions.columns]
     model_frame = executions.with_columns((pl.col("filled_qty") > 0).cast(pl.Int64).alias("filled_label"))
     x = _feature_matrix(model_frame, features)
-    y = model_frame["filled_label"].to_numpy()
+    y = np.nan_to_num(model_frame["filled_label"].to_numpy(), nan=0.0, posinf=0.0, neginf=0.0)
     if len(np.unique(y)) < 2:
         raise ValueError("fill probability model needs both filled and unfilled examples")
     stratify = y if _can_stratify(y) else None
@@ -216,7 +217,7 @@ def train_slippage_model(
         (pl.col("slippage").abs() / pl.col("notional").clip(1e-12, None) * 10_000.0).alias("slippage_bps_abs")
     )
     x = _feature_matrix(model_frame, features)
-    y = model_frame["slippage_bps_abs"].fill_nan(0.0).fill_null(0.0).to_numpy()
+    y = np.nan_to_num(model_frame["slippage_bps_abs"].fill_nan(0.0).fill_null(0.0).to_numpy(), nan=0.0, posinf=0.0, neginf=0.0)
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.30, random_state=random_state)
     model = RandomForestRegressor(n_estimators=80, max_depth=8, random_state=random_state, n_jobs=-1)
     model.fit(x_train, y_train)

@@ -17,6 +17,16 @@ REQUIRED_LOB_COLUMNS = {
     "ask_size",
 }
 
+BINANCE_BOOKTICKER_COLUMNS = [
+    "update_id",
+    "best_bid_price",
+    "best_bid_qty",
+    "best_ask_price",
+    "best_ask_qty",
+    "transaction_time",
+    "event_time",
+]
+
 COLUMN_ALIASES = {
     "timestamp": [
         "timestamp",
@@ -68,6 +78,23 @@ COLUMN_ALIASES = {
 }
 
 
+def _can_normalize(frame: pl.DataFrame) -> bool:
+    return REQUIRED_LOB_COLUMNS.issubset(set(_with_aliases(frame).columns))
+
+
+def _read_csv_bytes(data: bytes, max_rows: int | None = None) -> pl.DataFrame:
+    with_header = pl.read_csv(BytesIO(data), n_rows=max_rows)
+    if _can_normalize(with_header):
+        return with_header
+
+    headerless = pl.read_csv(BytesIO(data), has_header=False, n_rows=max_rows)
+    if headerless.width == len(BINANCE_BOOKTICKER_COLUMNS):
+        return headerless.rename(
+            {old: new for old, new in zip(headerless.columns, BINANCE_BOOKTICKER_COLUMNS, strict=True)}
+        )
+    return with_header
+
+
 def _with_aliases(frame: pl.DataFrame) -> pl.DataFrame:
     existing = set(frame.columns)
     expressions = []
@@ -100,6 +127,17 @@ def normalize_lob_frame(frame: pl.DataFrame) -> pl.DataFrame:
             pl.col("bid_size").cast(pl.Float64),
             pl.col("ask_size").cast(pl.Float64),
         ]
+    ).filter(
+        (pl.col("mid_price").is_finite())
+        & (pl.col("bid_price").is_finite())
+        & (pl.col("ask_price").is_finite())
+        & (pl.col("bid_size").is_finite())
+        & (pl.col("ask_size").is_finite())
+        & (pl.col("mid_price") > 0)
+        & (pl.col("bid_price") > 0)
+        & (pl.col("ask_price") > 0)
+        & (pl.col("bid_size") >= 0)
+        & (pl.col("ask_size") >= 0)
     ).sort("timestamp")
 
     if "spread_bps" not in normalized.columns:
@@ -136,21 +174,23 @@ def normalize_lob_frame(frame: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def load_lob_file(path: str | Path) -> pl.DataFrame:
+def load_lob_file(path: str | Path, max_rows: int | None = None) -> pl.DataFrame:
     """Load historical LOB/tick data from CSV, Parquet, or a ZIP containing CSV."""
     file_path = Path(path)
     suffix = file_path.suffix.lower()
     if suffix == ".csv":
-        frame = pl.read_csv(file_path)
+        frame = _read_csv_bytes(file_path.read_bytes(), max_rows=max_rows)
     elif suffix in {".parquet", ".pq"}:
         frame = pl.read_parquet(file_path)
+        if max_rows is not None:
+            frame = frame.head(max_rows)
     elif suffix == ".zip":
         with ZipFile(file_path) as archive:
             csv_names = [name for name in archive.namelist() if name.lower().endswith(".csv")]
             if not csv_names:
                 raise ValueError("ZIP file does not contain a CSV file")
             with archive.open(csv_names[0]) as csv_file:
-                frame = pl.read_csv(BytesIO(csv_file.read()))
+                frame = _read_csv_bytes(csv_file.read(), max_rows=max_rows)
     else:
         raise ValueError("supported LOB file formats: .csv, .parquet, .pq, .zip")
     return normalize_lob_frame(frame)

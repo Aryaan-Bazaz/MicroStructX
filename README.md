@@ -23,6 +23,7 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 python -m pytest
 python -m microstructx.cli --events 10000
+python -m microstructx.cli --url "https://data.binance.vision/data/futures/um/daily/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2023-05-16.zip" --output datasets\BTCUSDT-bookTicker-2023-05-16.zip --max-rows 50000 --ml
 python examples\run_benchmarks.py
 python examples\run_streaming.py
 python examples\research_slippage_by_regime.py
@@ -35,12 +36,36 @@ Or run the example:
 python examples\run_phase_1_3.py
 ```
 
-For the dashboard:
+The dashboard is optional. For CLI-only usage, use `python -m microstructx.cli`.
+
+For the optional dashboard:
 
 ```powershell
 python -m pip install -e ".[dashboard]"
 streamlit run src\microstructx\dashboard.py
 ```
+
+## CLI On Online Dataset
+
+Run directly on an online Binance public dataset:
+
+```powershell
+python -m microstructx.cli --url "https://data.binance.vision/data/futures/um/daily/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2023-05-16.zip" --output datasets\BTCUSDT-bookTicker-2023-05-16.zip --max-rows 50000
+```
+
+Add ML model training:
+
+```powershell
+python -m microstructx.cli --url "https://data.binance.vision/data/futures/um/daily/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2023-05-16.zip" --output datasets\BTCUSDT-bookTicker-2023-05-16.zip --max-rows 50000 --ml
+```
+
+Run again from the downloaded local file:
+
+```powershell
+python -m microstructx.cli --path datasets\BTCUSDT-bookTicker-2023-05-16.zip --max-rows 50000 --ml
+```
+
+The CLI prints baseline PnL, execution metrics, risk metrics, per-agent results, regime execution quality, and optional ML metrics.
 
 ## Architecture
 

@@ -1,3 +1,5 @@
+from zipfile import ZipFile
+
 import polars as pl
 
 from microstructx.benchmarks import benchmark_execution, benchmark_scaling_report, naive_execute_orders, numba_estimate_fills
@@ -168,6 +170,25 @@ def test_loader_accepts_binance_bookticker_aliases() -> None:
     assert "ask_size" in normalized.columns
 
 
+def test_load_lob_file_accepts_headerless_binance_zip(tmp_path) -> None:
+    csv_rows = "\n".join(
+        [
+            "1,99.9,10.0,100.1,8.0,1000,1001",
+            "2,100.0,12.0,100.2,7.0,1002,1003",
+            "3,100.1,11.0,100.3,9.0,1004,1005",
+        ]
+    )
+    zip_path = tmp_path / "bookticker.zip"
+    with ZipFile(zip_path, "w") as archive:
+        archive.writestr("bookticker.csv", csv_rows)
+
+    loaded = load_lob_file(zip_path, max_rows=2)
+
+    assert loaded.height == 2
+    assert loaded["timestamp"].to_list() == [1001, 1003]
+    assert [round(value, 4) for value in loaded["mid_price"].to_list()] == [100.0, 100.1]
+
+
 def test_ml_pipeline_trains_on_synthetic_data() -> None:
     book = generate_synthetic_lob(n_events=900, seed=9)
     market_frame = build_ml_market_frame(book, horizon=5)
@@ -177,3 +198,21 @@ def test_ml_pipeline_trains_on_synthetic_data() -> None:
     assert set(results) == {"regime_detector", "price_direction", "fill_probability", "slippage"}
     assert results["regime_detector"].metrics["rows"] > 0
     assert results["fill_probability"].metrics["accuracy"] >= 0.0
+
+
+def test_ml_feature_matrix_handles_invalid_online_rows() -> None:
+    raw = pl.DataFrame(
+        {
+            "event_time": list(range(120)),
+            "best_bid_price": [0.0] + [99.9 + idx * 0.01 for idx in range(119)],
+            "best_bid_qty": [10.0 for _ in range(120)],
+            "best_ask_price": [0.0] + [100.1 + idx * 0.01 for idx in range(119)],
+            "best_ask_qty": [8.0 for _ in range(120)],
+        }
+    )
+
+    normalized = normalize_lob_frame(raw)
+    market_frame = build_ml_market_frame(normalized, horizon=2)
+
+    assert normalized.height == 119
+    assert market_frame.height > 0
