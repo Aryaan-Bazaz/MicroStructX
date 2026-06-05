@@ -12,6 +12,7 @@ This repository currently implements phases 1-7:
 - Phase 6: Streamlit/Plotly dashboard for PnL, regimes, agents, fills, and execution quality.
 - Phase 7: realtime-style streaming mode using chunked synthetic tick ingestion and rolling-window simulation.
 - ML layer: regime clustering, price direction classification, fill probability prediction, and slippage regression.
+- Low-level systems layer: standalone C++17 execution core with CMake and microbenchmarking.
 
 The default demo still uses synthetic data, but the engine now also accepts historical level-1 LOB/tick data from CSV or Parquet.
 
@@ -28,6 +29,14 @@ python examples\run_benchmarks.py
 python examples\run_streaming.py
 python examples\research_slippage_by_regime.py
 python examples\run_ml_pipeline.py
+```
+
+Build and run the optional C++ execution core:
+
+```powershell
+cmake -S cpp -B cpp\build -DCMAKE_BUILD_TYPE=Release
+cmake --build cpp\build --config Release
+.\cpp\build\Release\microstructx_bench.exe --events 1000000 --orders 1000000
 ```
 
 Or run the example:
@@ -83,6 +92,8 @@ Order-Book Execution Simulator
 PnL + Risk Analytics
           ↓
 Dashboard / Streaming
+          ↓
+C++ Execution Core
 ```
 
 ## Implemented Components
@@ -263,6 +274,46 @@ Or download and train in one command:
 ```powershell
 python examples\run_ml_pipeline.py --url "https://data.binance.vision/data/futures/um/daily/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2023-05-16.zip" --output datasets\BTCUSDT-bookTicker-2023-05-16.zip
 ```
+
+## Low-Level C++ Execution Core
+
+The `cpp/` directory adds a standalone C++17 systems layer:
+
+- cache-friendly `BboEvent`, `Order`, and `FillResult` structs
+- queue-aware market/limit order execution logic
+- partial fills, queue-ahead, queue depletion, fees, slippage, and impact
+- lightweight CSV reader for canonical BBO CSVs or headerless Binance `bookTicker` CSVs
+- CMake build with `microstructx_core` static library
+- `microstructx_bench` executable for throughput benchmarking
+
+Build:
+
+```powershell
+cmake -S cpp -B cpp\build -DCMAKE_BUILD_TYPE=Release
+cmake --build cpp\build --config Release
+```
+
+Run synthetic C++ benchmark:
+
+```powershell
+.\cpp\build\Release\microstructx_bench.exe --events 1000000 --orders 1000000
+```
+
+If CMake is not installed but `g++` is available:
+
+```powershell
+New-Item -ItemType Directory -Force cpp\build
+g++ -std=c++17 -O2 -Icpp\include cpp\src\execution_core.cpp cpp\src\csv_loader.cpp cpp\benchmarks\execution_benchmark.cpp -o cpp\build\microstructx_bench.exe
+.\cpp\build\microstructx_bench.exe --events 100000 --orders 100000
+```
+
+Run on a CSV file:
+
+```powershell
+.\cpp\build\Release\microstructx_bench.exe --csv path\to\bbo.csv --events 1000000 --orders 1000000
+```
+
+This makes the project suitable to discuss as quant research infrastructure plus low-level execution systems work.
 
 ## Current Assumptions
 
